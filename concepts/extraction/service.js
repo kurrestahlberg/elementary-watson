@@ -127,7 +127,8 @@ class ExtractionService {
             const existingKey = await this.findExistingTranslation(workspacePath, newValue);
             if (existingKey) {
                 // Auto-interpolate with existing key without asking
-                return await this.replaceTextWithKey(editor, existingKey);
+                const keyCall = this.formatKeyCall(existingKey, 'code');
+                return await this.replaceSelectedText(editor, keyCall);
             }
 
             // Generate new key
