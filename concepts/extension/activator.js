@@ -120,6 +120,9 @@ class ExtensionActivator {
         // Register sidebar commands
         this.registerSidebarCommands();
 
+        // Register copy translation command
+        this.registerCopyTranslationCommand();
+
         // Register translation label click command
         this.registerTranslationLabelClickCommand();
 
@@ -223,6 +226,45 @@ class ExtensionActivator {
         });
 
         this.disposables.push(extractTextCommand);
+    }
+
+    /**
+     * Register the copy translation command
+     */
+    registerCopyTranslationCommand() {
+        const copyTranslationCommand = vscode.commands.registerCommand('elementaryWatson.copyTranslation', async (translationValue, start, end) => {
+            // Open an input box and save input as newValue
+            const newValue = await vscode.window.showInputBox({
+                prompt: 'Edit Translation',
+                value: translationValue // Pre-fill with the current translation
+            });
+
+            // Get editor
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showErrorMessage('No active text editor');
+                return;
+            }
+            // Check for supported document
+            if (!this.editorService.isSupportedDocument(editor.document)) {
+                vscode.window.showErrorMessage('Text extraction is only supported in JavaScript, TypeScript, and Svelte files');
+                return;
+            }
+
+            // Select the text corresponding to the range (start -> end)
+            const range = new vscode.Range(start, end);
+            editor.selection = new vscode.Selection(range.start, range.end);
+
+            // Filter only new values, for old value we dont need to do anything
+            if (newValue != translationValue) {
+                const success = await this.extractionService.createNewBinding(editor, newValue);
+                if (success) {
+                    vscode.window.showInformationMessage('New binding created successfully');
+                }
+            }
+        });
+
+        this.disposables.push(copyTranslationCommand);
     }
 
     /**
