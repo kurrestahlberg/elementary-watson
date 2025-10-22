@@ -105,6 +105,57 @@ class ExtractionService {
     }
 
     /**
+     * If newValue is not present in locale, then add new binding and replace selection with new key, else replace current key with existing key
+     * @param {vscode.TextEditor} editor The active text editor
+     * @param {string} newValue Text to be added as binding
+     * @returns {Promise<boolean>} True if creation was successful
+     */
+    async createNewBinding(editor, newValue) {
+        try {
+
+            // Process newValue if needed
+
+            const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+            if (!workspaceFolder) {
+                vscode.window.showErrorMessage('No workspace folder found');
+                return false;
+            }
+
+            const workspacePath = workspaceFolder.uri.fsPath;
+
+            // Check if the exact text already exists in translations (using newValue), if so, replace the key in file
+            const existingKey = await this.findExistingTranslation(workspacePath, newValue);
+            if (existingKey) {
+                // Auto-interpolate with existing key without asking
+                return await this.replaceTextWithKey(editor, existingKey);
+            }
+
+            // Generate new key
+            const newKey = await this.generateUniqueKey(workspacePath);
+            if (!newKey) {
+                vscode.window.showErrorMessage('Failed to generate unique key');
+                return false;
+            }
+
+            // Add to locale files (using newValue)
+            const success = await this.addToLocaleFiles(workspacePath, newKey, newValue);
+            if (!success) {
+                vscode.window.showErrorMessage('Failed to update locale files');
+                return false;
+            }
+
+            // Replace current key with newKey
+            const keyCall = this.formatKeyCall(newKey, 'code');
+            return await this.replaceSelectedText(editor, keyCall);
+
+        } catch (error) {
+            console.error('Error during creation of new binding:', error);
+            vscode.window.showErrorMessage(`Failed to create new binding: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
      * Find if the exact text already exists in any translation (supports nested keys)
      * @param {string} workspacePath The workspace root path
      * @param {string} text The text to search for
