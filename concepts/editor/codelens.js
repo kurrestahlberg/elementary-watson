@@ -39,13 +39,25 @@ class TranslationCodeLensProvider {
             const position = document.positionAt(result.end);
             const range = new vscode.Range(position, position);
             
-            const codeLens = new vscode.CodeLens(range, {
+            // InspectTranslation codelens
+            const inspectCodeLens = new vscode.CodeLens(range, {
                 title: `$(globe)  Inspect Translation`,
                 command: 'elementaryWatson.clickTranslationLabel',
                 arguments: [result.methodName, document.uri.fsPath]
             });
             
-            codeLenses.push(codeLens);
+            codeLenses.push(inspectCodeLens);
+
+            // CopyTranslation codelens
+            const copyCodeLens = new vscode.CodeLens(range, {
+                title: `$(copy)  Copy Translation`,
+                command: 'elementaryWatson.copyTranslation',
+                arguments: [result.translationValue,
+                            document.positionAt(result.start),
+                            document.positionAt(result.end)]
+            });
+
+            codeLenses.push(copyCodeLens);
         }
 
         return codeLenses;
