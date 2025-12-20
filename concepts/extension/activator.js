@@ -235,7 +235,7 @@ class ExtensionActivator {
         const copyTranslationCommand = vscode.commands.registerCommand('elementaryWatson.copyTranslation', async (translationValue, start, end) => {
             // Open an input box and save input as newValue
             const newValue = await vscode.window.showInputBox({
-                prompt: 'Edit Translation',
+                prompt: 'Edit translation (will create new key)',
                 value: translationValue // Pre-fill with the current translation
             });
 
@@ -256,7 +256,7 @@ class ExtensionActivator {
             editor.selection = new vscode.Selection(range.start, range.end);
 
             // Filter only new values, for old value we dont need to do anything
-            if (newValue != translationValue) {
+            if (newValue !== undefined && newValue != translationValue) {
                 const success = await this.extractionService.createNewBinding(editor, newValue);
                 if (success) {
                     vscode.window.showInformationMessage('New binding created successfully');
