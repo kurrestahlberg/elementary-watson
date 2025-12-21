@@ -210,6 +210,8 @@ class SidebarService {
      */
     async navigateToValue(editor, value) {
         try {
+            if (value === '') return false;
+
             const document = editor.document;
             const text = document.getText();
             
