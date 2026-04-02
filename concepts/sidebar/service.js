@@ -6,7 +6,11 @@ const { LocaleService } = require('../locale/service');
  * Service for managing sidebar translation data
  */
 class SidebarService {
-    constructor() {
+    /**
+     * @param {import('../project/registry').ProjectRegistry} [projectRegistry]
+     */
+    constructor(projectRegistry) {
+        this.projectRegistry = projectRegistry;
         this.translationService = new TranslationService();
         this.localeService = new LocaleService();
     }
@@ -23,7 +27,11 @@ class SidebarService {
             const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
             if (!workspaceFolder) return [];
 
-            const workspacePath = workspaceFolder.uri.fsPath;
+            // Resolve project root (monorepo support) or fall back to workspace root
+            const projectRoot = this.projectRegistry
+                ? this.projectRegistry.findProjectRoot(document.uri.fsPath)
+                : null;
+            const workspacePath = projectRoot || workspaceFolder.uri.fsPath;
             const text = document.getText();
 
             // Find all m.methodName() calls in the current file
@@ -156,14 +164,18 @@ class SidebarService {
                 return;
             }
 
-            const workspacePath = workspaceFolder.uri.fsPath;
+            // Resolve project root (monorepo support) or fall back to workspace root
+            const projectRoot = this.projectRegistry
+                ? this.projectRegistry.findProjectRoot(document.uri.fsPath)
+                : null;
+            const workspacePath = projectRoot || workspaceFolder.uri.fsPath;
             const filePath = document.uri.fsPath;
-            
+
             // Determine locale from file path
             const path = require('path');
             const fileName = path.basename(filePath, '.json');
             const locale = fileName; // Assuming file name is the locale
-            
+
             // Use existing TranslationService to load and process the translation
             const translations = await this.translationService.loadTranslationsForLocale(workspacePath, locale);
             if (!translations) {
@@ -346,12 +358,16 @@ class SidebarService {
                 return false;
             }
 
-            const workspacePath = workspaceFolder.uri.fsPath;
+            // Resolve project root (monorepo support) or fall back to workspace root
+            const projectRoot = this.projectRegistry
+                ? this.projectRegistry.findProjectRoot(document.uri.fsPath)
+                : null;
+            const workspacePath = projectRoot || workspaceFolder.uri.fsPath;
             const filePath = document.uri.fsPath;
-            
+
             // Get the path pattern for translation files
             const pathPattern = this.localeService.getTranslationPathPattern(workspacePath);
-            
+
             const path = require('path');
             const relativePath = path.relative(workspacePath, filePath);
             

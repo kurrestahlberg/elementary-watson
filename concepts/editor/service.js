@@ -8,7 +8,11 @@ const { TranslationCodeLensProvider } = require('./codelens');
  * Service for processing VS Code documents and managing translation displays
  */
 class EditorService {
-    constructor() {
+    /**
+     * @param {import('../project/registry').ProjectRegistry} [projectRegistry]
+     */
+    constructor(projectRegistry) {
+        this.projectRegistry = projectRegistry;
         this.translationService = new TranslationService();
         this.localeService = new LocaleService();
         this.editorDecorator = new EditorDecorator();
@@ -42,6 +46,12 @@ class EditorService {
             const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
             if (!workspaceFolder) return;
 
+            // Resolve project root (monorepo support) or fall back to workspace root
+            const projectRoot = this.projectRegistry
+                ? this.projectRegistry.findProjectRoot(document.uri.fsPath)
+                : null;
+            const effectiveRoot = projectRoot || workspaceFolder.uri.fsPath;
+
             // Find all m.methodName() calls
             const translationCalls = this.translationService.findTranslationCalls(text);
             if (translationCalls.length === 0) {
@@ -51,18 +61,18 @@ class EditorService {
             }
 
             // Load translations using the current locale
-            const currentLocale = this.localeService.getCurrentLocale();
+            const currentLocale = this.localeService.getCurrentLocale(effectiveRoot);
             const translations = await this.translationService.loadTranslationsForLocale(
-                workspaceFolder.uri.fsPath, 
+                effectiveRoot,
                 currentLocale
             );
 
             // Process translation calls to get resolved values with warning states
             // Note: We process even if translations is null to show warning labels
             const translationResults = await this.translationService.processTranslationCallsWithWarnings(
-                translationCalls, 
-                translations || {}, 
-                workspaceFolder.uri.fsPath,
+                translationCalls,
+                translations || {},
+                effectiveRoot,
                 currentLocale
             );
             

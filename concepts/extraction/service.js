@@ -9,7 +9,11 @@ const { TranslationRepository } = require('../translation/repository');
  * Service for extracting strings and adding them to locale files
  */
 class ExtractionService {
-    constructor() {
+    /**
+     * @param {import('../project/registry').ProjectRegistry} [projectRegistry]
+     */
+    constructor(projectRegistry) {
+        this.projectRegistry = projectRegistry;
         this.localeService = new LocaleService();
         this.translationRepository = new TranslationRepository();
     }
@@ -64,7 +68,11 @@ class ExtractionService {
                 return false;
             }
 
-            const workspacePath = workspaceFolder.uri.fsPath;
+            // Resolve project root (monorepo support) or fall back to workspace root
+            const projectRoot = this.projectRegistry
+                ? this.projectRegistry.findProjectRoot(editor.document.uri.fsPath)
+                : null;
+            const workspacePath = projectRoot || workspaceFolder.uri.fsPath;
 
             // Check if the exact text already exists in translations (using cleaned text)
             const existingKey = await this.findExistingTranslation(workspacePath, selectedText);
@@ -121,7 +129,11 @@ class ExtractionService {
                 return false;
             }
 
-            const workspacePath = workspaceFolder.uri.fsPath;
+            // Resolve project root (monorepo support) or fall back to workspace root
+            const projectRoot = this.projectRegistry
+                ? this.projectRegistry.findProjectRoot(editor.document.uri.fsPath)
+                : null;
+            const workspacePath = projectRoot || workspaceFolder.uri.fsPath;
 
             // Check if the exact text already exists in translations (using newValue), if so, replace the key in file
             const existingKey = await this.findExistingTranslation(workspacePath, newValue);

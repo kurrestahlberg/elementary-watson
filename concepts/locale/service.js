@@ -8,9 +8,10 @@ const path = require('path');
 class LocaleService {
     /**
      * Get the current locale from various sources in priority order
+     * @param {string} [projectRoot] Optional project root for project-specific baseLocale fallback
      * @returns {string} The current locale code
      */
-    getCurrentLocale() {
+    getCurrentLocale(projectRoot) {
         // 1. Check VS Code configuration
         const config = vscode.workspace.getConfiguration('elementaryWatson');
         const configLocale = config.get('defaultLocale');
@@ -18,9 +19,10 @@ class LocaleService {
             return configLocale;
         }
 
-        // 2. Check inlang settings if we have a workspace
-        if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
-            const inlangSettings = this.loadInlangSettings(vscode.workspace.workspaceFolders[0].uri.fsPath);
+        // 2. Check inlang settings using project root or workspace root fallback
+        const rootPath = projectRoot || (vscode.workspace.workspaceFolders?.[0]?.uri.fsPath);
+        if (rootPath) {
+            const inlangSettings = this.loadInlangSettings(rootPath);
             if (inlangSettings && inlangSettings.baseLocale) {
                 return inlangSettings.baseLocale;
             }

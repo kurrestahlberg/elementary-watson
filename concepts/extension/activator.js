@@ -1,5 +1,6 @@
 const vscode = require('vscode');
 const path = require('path');
+const { ProjectRegistry } = require('../project/registry');
 const { EditorService } = require('../editor/service');
 const { LocaleService } = require('../locale/service');
 const { ExtractionService } = require('../extraction/service');
@@ -11,11 +12,12 @@ const { SidebarTreeProvider } = require('../sidebar/provider');
  */
 class ExtensionActivator {
     constructor() {
-        this.editorService = new EditorService();
+        this.projectRegistry = new ProjectRegistry();
+        this.editorService = new EditorService(this.projectRegistry);
         this.localeService = new LocaleService();
-        this.extractionService = new ExtractionService();
-        this.sidebarService = new SidebarService();
-        this.sidebarTreeProvider = new SidebarTreeProvider(this.sidebarService);
+        this.extractionService = new ExtractionService(this.projectRegistry);
+        this.sidebarService = new SidebarService(this.projectRegistry);
+        this.sidebarTreeProvider = new SidebarTreeProvider(this.sidebarService, this.projectRegistry);
         this.disposables = [];
         this.treeView = null; // Tree view instance for title updates
         
@@ -132,8 +134,10 @@ class ExtensionActivator {
         // Set up event listeners
         this.setupEventListeners();
 
-        // Set up translation file watchers
-        this.setupTranslationFileWatchers();
+        // Discover all inlang projects (monorepo support) and set up file watchers
+        this.projectRegistry.discoverProjects(vscode.workspace.workspaceFolders).then(() => {
+            this.setupTranslationFileWatchers();
+        });
 
         // Process currently active editor on activation
         this.processActiveEditor();
@@ -284,9 +288,11 @@ class ExtensionActivator {
                         return;
                     }
 
-                    const workspacePath = workspaceFolder.uri.fsPath;
-                    const currentLocale = this.localeService.getCurrentLocale();
-                    
+                    // Resolve project root (monorepo support) or fall back to workspace root
+                    const projectRoot = this.projectRegistry.findProjectRoot(filePath);
+                    const workspacePath = projectRoot || workspaceFolder.uri.fsPath;
+                    const currentLocale = this.localeService.getCurrentLocale(workspacePath);
+
                     // Refresh sidebar with current document to ensure it shows the clicked key
                     const activeEditor = vscode.window.activeTextEditor;
                     if (activeEditor && activeEditor.document.uri.fsPath === filePath) {
@@ -335,54 +341,109 @@ class ExtensionActivator {
         try {
             // Clear existing watchers
             this.disposeTranslationFileWatchers();
-            
+
             if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
                 return;
             }
 
-            const workspaceFolder = vscode.workspace.workspaceFolders[0];
-            const workspacePath = workspaceFolder.uri.fsPath;
-            
-            // Get available locales
-            const availableLocales = await this.sidebarService.getAvailableLocales(workspacePath);
-            
-            // Create file watchers for each locale
-            for (const locale of availableLocales) {
-                const translationPath = this.localeService.resolveTranslationPath(workspacePath, locale);
-                const relativePath = path.relative(workspacePath, translationPath);
-                
-                // Create a file system watcher for this specific translation file
-                const watcher = vscode.workspace.createFileSystemWatcher(
-                    new vscode.RelativePattern(workspaceFolder, relativePath),
-                    false, // Don't ignore creates
-                    false, // Don't ignore changes
-                    false  // Don't ignore deletes
-                );
-                
-                // Handle file changes
-                watcher.onDidChange(async () => {
-                    await this.handleTranslationFileChange(locale);
-                });
-                
-                // Handle file creation (useful for new locale files)
-                watcher.onDidCreate(async () => {
-                    await this.handleTranslationFileChange(locale);
-                });
-                
-                // Handle file deletion
-                watcher.onDidDelete(async () => {
-                    await this.handleTranslationFileChange(locale);
-                });
-                
-                this.translationFileWatchers.push(watcher);
-                this.disposables.push(watcher);
-                
-                console.log(`🔍 Watching translation file: ${relativePath}`);
+            // Watch translation files for each discovered project (monorepo support)
+            const projects = this.projectRegistry.getKnownProjects();
+
+            for (const projectRoot of projects) {
+                const workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(projectRoot));
+                if (!workspaceFolder) continue;
+
+                const availableLocales = await this.sidebarService.getAvailableLocales(projectRoot);
+
+                for (const locale of availableLocales) {
+                    const translationPath = this.localeService.resolveTranslationPath(projectRoot, locale);
+                    const relativePath = path.relative(workspaceFolder.uri.fsPath, translationPath);
+
+                    const watcher = vscode.workspace.createFileSystemWatcher(
+                        new vscode.RelativePattern(workspaceFolder, relativePath),
+                        false, false, false
+                    );
+
+                    watcher.onDidChange(async () => {
+                        await this.handleTranslationFileChange(locale);
+                    });
+                    watcher.onDidCreate(async () => {
+                        await this.handleTranslationFileChange(locale);
+                    });
+                    watcher.onDidDelete(async () => {
+                        await this.handleTranslationFileChange(locale);
+                    });
+
+                    this.translationFileWatchers.push(watcher);
+                    this.disposables.push(watcher);
+
+                    console.log(`🔍 Watching translation file: ${relativePath} (project: ${path.basename(projectRoot)})`);
+                }
             }
-            
+
+            // If no projects were discovered, fall back to workspace root (backward compat)
+            if (projects.length === 0) {
+                const workspaceFolder = vscode.workspace.workspaceFolders[0];
+                const workspacePath = workspaceFolder.uri.fsPath;
+                const availableLocales = await this.sidebarService.getAvailableLocales(workspacePath);
+
+                for (const locale of availableLocales) {
+                    const translationPath = this.localeService.resolveTranslationPath(workspacePath, locale);
+                    const relativePath = path.relative(workspacePath, translationPath);
+
+                    const watcher = vscode.workspace.createFileSystemWatcher(
+                        new vscode.RelativePattern(workspaceFolder, relativePath),
+                        false, false, false
+                    );
+
+                    watcher.onDidChange(async () => {
+                        await this.handleTranslationFileChange(locale);
+                    });
+                    watcher.onDidCreate(async () => {
+                        await this.handleTranslationFileChange(locale);
+                    });
+                    watcher.onDidDelete(async () => {
+                        await this.handleTranslationFileChange(locale);
+                    });
+
+                    this.translationFileWatchers.push(watcher);
+                    this.disposables.push(watcher);
+
+                    console.log(`🔍 Watching translation file: ${relativePath}`);
+                }
+            }
+
+            // Watch for project.inlang/settings.json changes to detect new/removed projects
+            const settingsWatcher = vscode.workspace.createFileSystemWatcher(
+                '**/project.inlang/settings.json',
+                false, false, false
+            );
+            settingsWatcher.onDidChange(async () => {
+                await this.handleProjectSettingsChange();
+            });
+            settingsWatcher.onDidCreate(async () => {
+                await this.handleProjectSettingsChange();
+            });
+            settingsWatcher.onDidDelete(async () => {
+                await this.handleProjectSettingsChange();
+            });
+            this.translationFileWatchers.push(settingsWatcher);
+            this.disposables.push(settingsWatcher);
+
         } catch (error) {
             console.error('Error setting up translation file watchers:', error);
         }
+    }
+
+    /**
+     * Handle changes to project.inlang/settings.json files (project added/removed/changed)
+     */
+    async handleProjectSettingsChange() {
+        console.log('📁 Project settings changed, re-discovering projects');
+        this.projectRegistry.invalidate();
+        await this.projectRegistry.discoverProjects(vscode.workspace.workspaceFolders);
+        await this.setupTranslationFileWatchers();
+        await this.processActiveEditor();
     }
 
     /**
@@ -552,9 +613,11 @@ class ExtensionActivator {
             }
         });
 
-        // Listen for workspace folder changes to refresh translation file watchers
+        // Listen for workspace folder changes to re-discover projects and refresh watchers
         const workspaceFoldersChangeDisposable = vscode.workspace.onDidChangeWorkspaceFolders(async () => {
-            console.log('📁 Workspace folders changed, refreshing translation file watchers');
+            console.log('📁 Workspace folders changed, re-discovering projects');
+            this.projectRegistry.invalidate();
+            await this.projectRegistry.discoverProjects(vscode.workspace.workspaceFolders);
             await this.setupTranslationFileWatchers();
         });
 

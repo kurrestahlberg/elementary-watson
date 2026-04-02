@@ -6,8 +6,13 @@ const { TranslationService } = require('../translation/service');
  * Tree data provider for the ElementaryWatson sidebar
  */
 class SidebarTreeProvider {
-    constructor(sidebarService) {
+    /**
+     * @param {import('./service').SidebarService} sidebarService
+     * @param {import('../project/registry').ProjectRegistry} [projectRegistry]
+     */
+    constructor(sidebarService, projectRegistry) {
         this.sidebarService = sidebarService;
+        this.projectRegistry = projectRegistry;
         this.localeService = new LocaleService();
         this.translationService = new TranslationService();
         this._onDidChangeTreeData = new vscode.EventEmitter();
@@ -109,20 +114,25 @@ class SidebarTreeProvider {
      */
     async getChildren(element) {
         if (!element) {
-            // Get current locale and workspace path
-            const currentLocale = this.localeService.getCurrentLocale();
-            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-            
-            if (!workspaceFolder) {
-                return this.translationData.map(keyData => 
+            // Resolve project root from current file (monorepo support)
+            const projectRoot = this.currentFilePath && this.projectRegistry
+                ? this.projectRegistry.findProjectRoot(this.currentFilePath)
+                : null;
+            const workspaceFolder = this.currentFilePath
+                ? vscode.workspace.getWorkspaceFolder(vscode.Uri.file(this.currentFilePath))
+                : vscode.workspace.workspaceFolders?.[0];
+            const effectiveRoot = projectRoot || workspaceFolder?.uri.fsPath;
+
+            const currentLocale = this.localeService.getCurrentLocale(effectiveRoot);
+
+            if (!effectiveRoot) {
+                return this.translationData.map(keyData =>
                     new TranslationKeyNode(keyData.key, keyData.locales.length)
                 );
             }
-            
-            const workspacePath = workspaceFolder.uri.fsPath;
-            
+
             // Load current locale translations
-            const currentTranslations = await this.translationService.loadTranslationsForLocale(workspacePath, currentLocale);
+            const currentTranslations = await this.translationService.loadTranslationsForLocale(effectiveRoot, currentLocale);
             
             // Return translation keys with current locale values
             return this.translationData.map(keyData => {
